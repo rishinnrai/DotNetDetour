@@ -73,13 +73,15 @@ namespace DotNetDetour
         /// <summary>
         /// 按给定类安装监视器
         /// </summary>
-        /// <param name="methods">IMethodHook实例，包含准备安装的所有方法</param>
+        /// <typeparam name="T">IMethodHook包含准备安装的所有方法</typeparam>
         /// <returns>false表示DotNetDetour已执行过安装，本次安装取消</returns>
-        public static bool Install(IMethodHook methods)
+        public static bool Install<T>()
+            where T : IMethodHook, new()
         {
             if (installed)
                 return false;
             installed = true;
+            var methods = new T();
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             assemblies = assemblies.Concat(new Assembly[] { methods.GetType().Assembly }).Distinct().ToArray();
             IEnumerable<IMethodHook> monitors = new List<IMethodHook>() { methods };
