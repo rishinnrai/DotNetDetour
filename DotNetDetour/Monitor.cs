@@ -35,13 +35,17 @@ namespace DotNetDetour
         static public BindingFlags AllFlag = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static;
         static bool installed = false;
         static List<DestAndOri> destAndOris = new List<DestAndOri>();
+
+
         /// <summary>
         /// 安装监视器
         /// </summary>
-        public static void Install(string dir = null)
+        /// <param name="dir">从该目录加载所有*.dll并安装其中所有的IMethodHook，缺省情况下安装</param>
+        /// <returns>false表示DotNetDetour已执行过安装，本次安装取消</returns>
+        public static bool Install(string dir = null)
         {
             if (installed)
-                return;
+                return false;
             installed = true;
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             IEnumerable<IMethodHook> monitors;
@@ -57,23 +61,39 @@ namespace DotNetDetour
                             .Where(x => x != null))
                             .Distinct()
                             .ToArray();
-
-                assemblies = assemblies.Concat(Directory
-                            .GetFiles(dir, "*.exe")
-                            .Select(d => { try { return Assembly.LoadFrom(d); } catch { return null; } })
-                            .Where(x => x != null))
-                            .Distinct()
-                            .ToArray();
-                monitors = assemblies.SelectMany(d => d.GetImplementedObjectsByInterface<IMethodHook>());
+                monitors = assemblies
+                            .SelectMany(d => d.GetImplementedObjectsByInterface<IMethodHook>());
             }
 
-            monitors = monitors.Where(item => item != null)?.ToList();
+            Install(assemblies, monitors);
+            return true;
+        }
+
+
+        /// <summary>
+        /// 按给定类安装监视器
+        /// </summary>
+        /// <param name="methods">IMethodHook实例，包含准备安装的所有方法</param>
+        /// <returns>false表示DotNetDetour已执行过安装，本次安装取消</returns>
+        public static bool Install(IMethodHook methods)
+        {
+            if (installed)
+                return false;
+            installed = true;
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            assemblies = assemblies.Concat(new Assembly[] { methods.GetType().Assembly }).Distinct().ToArray();
+            IEnumerable<IMethodHook> monitors = new List<IMethodHook>() { methods };
+            Install(assemblies, monitors);
+            return true;
+        }
+
+
+        private static void Install(Assembly[] assemblies, IEnumerable<IMethodHook> monitors)
+        {
             foreach (var monitor in monitors)
             {
-                if (monitor == null)
-                    continue;
                 var all = monitor.GetType().GetMethods(AllFlag);
-                var hookMethods = all.Where(t => t.GetCustomAttributesData().Any(a => typeof(HookMethodAttribute).IsAssignableFrom(a.Constructor.DeclaringType))).ToArray();
+                var hookMethods = all.Where(t => t.GetCustomAttributesData().Any(a => typeof(HookMethodAttribute).IsAssignableFrom(a.Constructor.DeclaringType)));
                 var originalMethods = all.Where(t => t.GetCustomAttributesData().Any(a => typeof(OriginalMethodAttribute).IsAssignableFrom(a.Constructor.DeclaringType))).ToArray();
 
                 var destCount = hookMethods.Count();
@@ -88,9 +108,6 @@ namespace DotNetDetour
                     }
                     else
                     {
-                        //var originalMethodName = hookMethod.GetCustomAttribute<HookMethodAttribute>().GetOriginalMethodName(hookMethod);
-
-                        //destAndOri.OriginalMethod = FindMethod(originalMethods, originalMethodName, hookMethod, assemblies);
                         var originalMethodName = hookMethod.GetCustomAttribute<HookMethodAttribute>().GetOriginalMethodName(hookMethod);
 
                         destAndOri.OriginalMethod = FindMethod(originalMethods, originalMethodName, hookMethod, assemblies);
